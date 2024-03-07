@@ -1,236 +1,297 @@
-"""
-:module : Script to calculate fixation probabilities in parallel using MPI.
-"""
-
-from mpi4py import MPI
-import mpi4py
 import networkx as nx
 import numpy as np
 import random
-import time
 
 ################################
 # Simulation parameters
 ################################
 # Population size
-population_size=6          
+population_size = 6          
 
 # Number of edges of a fully-connected graph
-b=int(population_size*(population_size-1)/2) 
+b = int(population_size * (population_size - 1) / 2) 
 
 # Number of parents producing next generation
-top_parents=5         
+top_parents = 5         
 
 # Number of realization untill a mutant gets fixed or goes extict
-number_of_realization=100         
-fitness=2
+number_of_realization = 100         
+fitness = 2
 
 # The number of parents
-number_of_parents=10          
+pool_size = 10          
 
 # Number of times the process for finding the optimized graphs repeats
-time_genetic_algorithm=1            
+time_genetic_algorithm = 1            
 
-#Initial random graphs
-def random_graphs():
-    '''generating number_of_parents initial random graphs'''
-    i=0
-    RG=[]
+import numpy as np
+import networkx as nx
+import random
+
+def random_graphs(pool_size, population_size):
+    '''Generating pool_size initial random graphs'''
+    i = 0
+    RG = []
     
-    while len(RG) !=number_of_parents:
-        RG.append(get_RG(i))
+    while len(RG) != pool_size:
+        b = int(population_size * (population_size - 1) / 2)  # Number of edges for complete graph
+        RG.append(get_RG(population_size, b, i))
         i += 1
         
     return RG
 
-def get_RG(seed=0):
+def get_RG(population_size, b, seed=0):
     """
     Generate a random graph
     
-    :param seed: The random seet
+    :param population_size: The size of the population (number of nodes)
+    :type  population_size: int
+    
+    :param b: Number of edges in the graph
+    :type  b: int
+    
+    :param seed: The random seed
     :type  seed: int
     
     """
-    
     random.seed(seed)
+    
+    if population_size <= 0:
+        raise ValueError("Population size must be greater than 0")
+    if b <= 0:
+        raise ValueError("Parameter 'b' must be greater than 0")
     
     # Loop until we find a connected graph.
     while True:
-        matrix1 = np.array([np.random.randint(2) for _ in range(b)]) # generate a random matrix of size b
+        # generate a random matrix of size b that consists of 0 and 1
+        matrix1 = np.array([np.random.randint(2) for _ in range(b)]) 
+        
+        # retrieve the indices of the upper triangle of a matrix with the size population_size*population_size
+        upper_indices = np.triu_indices(population_size, k = 1)
 
-        upper_indices=np.triu_indices(population_size, k = 1)
-        lower_indices=(upper_indices[1],upper_indices[0])
-
-        G=np.zeros([population_size,population_size])
-        G[upper_indices]=matrix1
-        G[lower_indices]=matrix1
+        G = np.zeros([population_size, population_size])
+        G[upper_indices] = matrix1
+        G += G.T
+        #convert array G to a format that is readable to library networkx
         G1 = nx.from_numpy_array(G)
+        
+        #check if the generated random graph is connected
+        if nx.is_connected(G1):
+            return G1
 
-        if (nx.is_connected(G1)==True):
-            return G
 
-#fixation probability of a graph
-def fix_prob(graph):    
-    
-    Fixation_Time=[]
-    
+
+
+
+def fixation_probability(graph, number_of_realization, fitness, population_size):
+    """
+    Calculate the average fixation probability of a mutant in a graph
+    """
+    Fixation_Time = []
+
     for i in range(number_of_realization):
-        time = calc_time(graph)
+        # Calculate fixation time
+        time = fixation_time(graph, population_size, fitness)
         Fixation_Time.append(time)
-    Fixation_Time =list(filter((1).__ne__, Fixation_Time))
-    return len(Fixation_Time)/number_of_realization
+    
+    # Remove the entries of the list that equal to 1 which correspond to extinction
+    Fixation_Time = list(filter((1).__ne__, Fixation_Time))
 
-def calc_time(graph):
+    return len(Fixation_Time) / number_of_realization
+
+def fixation_time(graph, population_size, fitness):
+    """
+    This function calculates the fixation time of a mutant in a graph
+    it reaturn 1 if instead of fixation there is an extinction
+    """
+    # Configuration determines whether a node in graph is occupied by a mutant or a wild-type
+    # initially the whole network is occupied by wild-types
     Configuration = np.zeros(population_size)  
+    
+    # the fitness of a mutant is 1 if it is a wild-type otherwise it is equal to fitness
     Fitness = np.ones(population_size)  
+
+    # one of the individuals goes through mutation randomly
     first_mutant = random.randrange(population_size)  
     Configuration[first_mutant] = 1
     Fitness[first_mutant] = fitness
     number_of_mutants = 1
-    fixation_time = 0
+    time = 0
 
     while number_of_mutants != population_size:
-        fixation_time = fixation_time + 1
-        probability_of_Birth = Fitness / (population_size - number_of_mutants + fitness * number_of_mutants)  # probability matrix for selection.
-        cumulative_of_probability_of_birth = np.cumsum(probability_of_Birth)  # cumulative of probability
-        rand = random.random()  # generating a random number
+        time += 1
+        
+        # the probability of selecting an individual for birth
+        probability_of_Birth = Fitness / (population_size - number_of_mutants + fitness * number_of_mutants)  
+        
+        # cumulative of probability
+        cumulative_of_probability_of_birth = np.cumsum(probability_of_Birth) 
+
+        #selecting an individual for birth randomly but proportional to its fitness
+        rand = random.random()  
         birth_node = np.where(rand <= cumulative_of_probability_of_birth)[0][0] 
 
-        Nighbor_of_birth_node = np.where(graph[birth_node, 0:population_size] == 1)[0]  # find all neighbors of m
+        # find all neighbors of the individual that is selected for birth
+        neighbor_of_birth_node = np.where(graph[birth_node, 0:population_size] == 1)[0]  
         
-        Nighbor_of_birth_node.tolist()  # converting array to list.
-        death_node = random.choice(Nighbor_of_birth_node)  # select a neighbor.
+        # converting array to list.
+        neighbor_of_birth_node.tolist()
+
+        # select one  of the neighbors randomly  
+        death_node = random.choice(neighbor_of_birth_node)
+
+        # replace the node chosen for death by the offspring of the node chosen for birth 
         Configuration[death_node] = Configuration[birth_node]
         Fitness[death_node] = Fitness[birth_node]
-        number_of_mutants = sum(Configuration)  # calculate number of B in each time
+
+        # calculate number of mutants in the population
+        number_of_mutants = sum(Configuration)  
+
+        #if the number of mutants is zero it means that we reached extinction 
+        # and we need to exclude this trial as we are interested in fixation
         if number_of_mutants == 0:
-            fixation_time = 1
+            time = 1
             break
 
-    return fixation_time
+    return time
 
 
 
 
-def cross_over(G1,G2):
-    parents1=G1[np.triu_indices(population_size, k = 1)] #pick up the upper triangle elements of the matrix
-    #print(parents1)
-    parents2=G2[np.triu_indices(population_size, k = 1)]
+
+def cross_over(G1, G2, error_rate, population_size):
+    """
+    Combine two graphs G1 and G2 and reproduce a new graph
+    """
     
-    #the process of recombination         
-    rand=random.random()
-    birth1=np.concatenate((parents1,parents2),axis=0)
+    # Pick up the upper triangle elements of the matrices G1 and G2
+    # Because the matrices are symmetric and having only the upper triangle is sufficient
+    parents1 = G1[np.triu_indices(population_size, k=1)] 
+    parents2 = G2[np.triu_indices(population_size, k=1)]
     
-    random.shuffle(birth1)
+    # The process of recombination    
+    # If both or none of the parents have a link this will be inherited to the offspring
+    # If one of the parents has a link and the other doesn't, the offspring either has the link with probability 0.5
+    # or it does not have with probability 0.5     
+    birth = np.where(parents1 == parents2, parents1, np.random.randint(2, size=len(parents1)))
     
-    birth=np.zeros([len(parents1)])
-    birth=birth1[0:len(parents1)]
-       
-    #mutation
-    rand=random.randrange(len(birth))
-    birth[rand]=abs(birth[rand]-1)
+    # During recombination, an error might occur with probability error_rate
+    # Mutation
+    if random.random() >= error_rate:
+        rand_index = random.randrange(len(birth))
+        birth[rand_index] = abs(birth[rand_index] - 1)
         
-    #build the adjacency matrix for the offspring
-    offspring=np.zeros([population_size,population_size])
-    upper_indices=np.triu_indices(population_size, k = 1)
-    lower_indices=(upper_indices[1],upper_indices[0])
-    offspring[upper_indices]=birth
-    offspring[lower_indices]=birth
+    # Build the adjacency matrix for the offspring
+    offspring = np.zeros([population_size, population_size])
+    upper_indices = np.triu_indices(population_size, k=1)
+    offspring[upper_indices] = birth
+    offspring += offspring.T
+   
+    
     return offspring
 
 
 
 
-def new_offspring(i): 
-            start=time.time()
-            
-            
-            
-            #crossover 
-            parents = random.sample(FIX_Prob_sorted[number_of_parents - top_parents:number_of_parents], 2)  # choose two individual among the highest fix-prob to mate
-            G1 = RG[parents[0]]
-            G2 = RG[parents[1]]
-            
-            offspring = cross_over(G1, G2)
-            
-            # check if the offspring is connected
-            offspring_matrix = np.asmatrix(offspring)
-            offspring_graph = nx.from_numpy_matrix(offspring_matrix)
-             
-            if nx.is_connected(offspring_graph):
-                
+def new_offspring(G1, G2, number_of_realization, fitness, population_size, error_rate):
+    """
+    Check the offspring if it is connected or not and if its fixation probability is higher or lower than its parents.
+    If it is lower then we keep the parents with the highest fixation probability in the new pool, otherwise we keep the offspring.
+    """
+    
+    # Crossover 
+    offspring = cross_over(G1, G2, error_rate, population_size)
+    
+    # Convert offspring to a format that is readable by networkx
+    offspring_matrix = np.asmatrix(offspring)
+    offspring_graph = nx.from_numpy_matrix(offspring_matrix)
 
-                new_family = [G1, G2, offspring]
-                Fixation_new_family = [FIX_Prob[parents[0]], FIX_Prob[parents[1]], fix_prob(offspring)]
-                max_ind = Fixation_new_family.index(max(Fixation_new_family))
-                offspring=new_family[max_ind]
-                fix_prob_offspring=max(Fixation_new_family)
-                #RG_new.append(new_family[max_ind])
-                #FIX_prob_new.append(max(Fixation_new_family))
-            else:
-                new_family = [G1, G2]
-                Fixation_new_family = [FIX_Prob[parents[0]], FIX_Prob[parents[1]]]
-                max_ind = Fixation_new_family.index(max(Fixation_new_family))
-                offspring=new_family[max_ind]
-                fix_prob_offspring=max(Fixation_new_family)
+    # Check if the offspring is connected
+    if nx.is_connected(offspring_graph):
+        
+        # Compare the fixation probability of the newborn with the parents
+        # Save the graph with the maximum fixation probability as the new offspring
+        new_family = [G1, G2, offspring]
+        fix_prob_1 = fixation_probability(G1, number_of_realization, fitness, population_size)
+        fix_prob_2 = fixation_probability(G2, number_of_realization, fitness, population_size)
+        fix_prob_offspring = fixation_probability(offspring, number_of_realization, fitness, population_size)
+
+        # Find the index of the graph with maximum fixation probability
+        max_ind = np.argmax([fix_prob_1, fix_prob_2, fix_prob_offspring])
+
+        # Save the graph with the maximum fixation probability as a new generation graph
+        offspring = new_family[max_ind]
+        fix_prob_offspring = max([fix_prob_1, fix_prob_2, fix_prob_offspring])
+        
+    else:
+        new_family = [G1, G2]
+        fix_prob_1 = fixation_probability(G1, number_of_realization, fitness, population_size)
+        fix_prob_2 = fixation_probability(G2, number_of_realization, fitness, population_size)
+
+        # Find the index of the graph with maximum fixation probability
+        max_ind = np.argmax([fix_prob_1, fix_prob_2])
+
+        # Save the graph with the maximum fixation probability as a new generation graph
+        offspring = new_family[max_ind]
+        fix_prob_offspring = max([fix_prob_1, fix_prob_2])
                 
-            return offspring, fix_prob_offspring, time.time()-start    
+    return offspring, fix_prob_offspring
+  
+
+
+def new_generation(pool, fix_prob_pool, top_fix_prob):
+
+    # produce the next generation
+    # sort the graphs based on their fixation probability
+    # Sort the list in descending order
+    sorted_fixation_probabilities = sorted(fix_prob_pool, reverse=True)    
+
+    # Get the highest fixation probabilities in the pool
+    top_fixation_probabilities = sorted_fixation_probabilities[:top_fix_prob]
+
+    # Get the indices of the graphs with the highest fixation probabilities
+    top_indices_fixation_probabilities = [fix_prob_pool.index(val) for val in top_fixation_probabilities]
+
+    # from the graphs with highest fixation porbability build the new generation
+    new_pool = []
+    fix_prob_new_pool = []
+    for i in range(pool_size):
+        # from the top graphs choose two graphs to recombine
+        parents = random.sample(top_indices_fixation_probabilities, 2)
+        G1 = pool[parents[0]]
+        G2 = pool[parents[1]]
+        offspring, fix_prob_offspring = new_offspring(G1, G2, number_of_realization, fitness, population_size, error_rate)
+        new_pool.append(offspring)
+        fix_prob_new_pool.append(fix_prob_offspring)
+
+    return new_pool, fix_prob_new_pool
+
+
+
+def find_graph_with_highest_fix_prob(number_of_iteration):
+
+    max_fix_prob = []
+    #initialize the pool of graphs
+    pool = random_graphs(pool_size, population_size)
+    
+    # calculate the fixation probability of the initial pool
+    fix_prob_pool = []
+    for graph in pool:
+        fix_prob_pool.append(fixation_probability(graph, number_of_realization, fitness, population_size))
+    max_fix_prob.append(max(fix_prob_pool))
+    for i in range(number_of_iteration):
+
+        pool, fix_prob_pool = new_generation(pool, fix_prob_pool, top_fix_prob)
+        max_fix_prob.append(max(fix_prob_pool))
+
+    return max_fix_prob
          
-# Setup the MPI communication
-comm = MPI.COMM_WORLD
-size = comm.Get_size()
-rank = comm.Get_rank()
-
-#calculte the fixation probability of an initial pool of random graphs
-if rank == 0:
-   RG = random_graphs()
-   FIX_Prob=[]
-   for g in RG:
-       FIX_Prob.append(fix_prob(g))
-   FIX_Prob = np.asarray(FIX_Prob)
-   FIX_Prob_sorted = np.argsort(FIX_Prob)  
-   FIX_Prob_sorted = list(FIX_Prob_sorted)    
-else:
-    RG = None
-    FIX_Prob_sorted = None
-       
-#broadcast the RG and FIX_Prob to the othere processors
-RG = comm.bcast(RG, root=0)
-FIX_Prob_sorted =  comm.bcast(FIX_Prob_sorted, root=0)       
-       
-
-def bulding_new_generation(RG, FIX_Prob, i):
-    if i %size == rank:  
-       RG_new = []
-       FIX_Prob_new=[]
-    
-       
-       offspring, fix_prob_offspring, duration = new_offspring(i)
-       RG_new.append(offspring)
-       FIX_Prob_new.append(fix_prob_offspring)
-
-    
-    return RG_new, FIX_Prob_new
 
 
 
 
 
 
-
-if rank==0:    
-   for j in range(time_genetic_algorithm):
-        FIX_Prob = np.asarray(FIX_Prob)
-        FIX_Prob_sorted = np.argsort(FIX_Prob)  
-        FIX_Prob_sorted = list(FIX_Prob_sorted) 
-        for i in range(10):
-            building_new_generation(RG, FIX_Prob)
-            
-    
-    RG = comm.gather(RG_new, root=0)
-    FIX_Prob=comm.gather(FIX_Prob_new)
-    print(RG)
-    print(FIX_Prob)
         
     
     
