@@ -1,19 +1,11 @@
-# pyevolnetworks
+# 
 
-Calculate fixation times in connected networks.
+Find the network with the highest fixation probability
 
 ## Requirements
 * python3
-* MPI
-* py dependencies:
-```shell
-python -m pip -r requirements.txt
-```
+* networkx
 
-## Run
-```shell
-sbatch mpijob.sh
-```
 
 
 

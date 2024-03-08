@@ -2,39 +2,27 @@ import networkx as nx
 import numpy as np
 import random
 
-################################
-# Simulation parameters
-################################
-# Population size
-population_size = 6          
+def random_graphs(pool_size, population_size, b):
+     """
+    Generate a list of random connected graphs.
+    
+    Parameters:
+        -pool_size: size of the pool or the number of graphs in the pool
+        -population_size: number of nodes of a network or a graph
+        -b: number of possible links or edges of a graph or network
 
-# Number of edges of a fully-connected graph
-b = int(population_size * (population_size - 1) / 2) 
+    Returns:
+        - RG: List of pool_size initial random connected graphs.
 
-# Number of parents producing next generation
-top_parents = 5         
+    Generates a list of connected graphs by repeatedly calling the `get_RG` function.
+    The number of graphs generated is determined by the variable `pool_size`.
 
-# Number of realization untill a mutant gets fixed or goes extict
-number_of_realization = 100         
-fitness = 2
-
-# The number of parents
-pool_size = 10          
-
-# Number of times the process for finding the optimized graphs repeats
-time_genetic_algorithm = 1            
-
-import numpy as np
-import networkx as nx
-import random
-
-def random_graphs(pool_size, population_size):
-    '''Generating pool_size initial random graphs'''
+    :return: List of connected graphs.
+    """
     i = 0
     RG = []
     
     while len(RG) != pool_size:
-        b = int(population_size * (population_size - 1) / 2)  # Number of edges for complete graph
         RG.append(get_RG(population_size, b, i))
         i += 1
         
@@ -42,17 +30,22 @@ def random_graphs(pool_size, population_size):
 
 def get_RG(population_size, b, seed=0):
     """
-    Generate a random graph
+    Generate a random connected graph
     
-    :param population_size: The size of the population (number of nodes)
-    :type  population_size: int
-    
-    :param b: Number of edges in the graph
-    :type  b: int
-    
-    :param seed: The random seed
-    :type  seed: int
-    
+    Parameters:
+        -population_size: number of nodes of a network or a graph
+        -b: number of possible links or edges of a graph or network
+        - seed: The random seed for reproducibility.
+          (Default: 0)
+
+    Returns:
+        - G: A random connected graph as an adjacency matrix.
+
+    Randomly generates a binary matrix of size `b` and constructs an upper triangular
+    adjacency matrix with the same values. The matrix is used to create a graph, and the
+    process is repeated until a connected graph is obtained.
+
+    Note: The generated graph is guaranteed to be connected.
     """
     random.seed(seed)
     
@@ -63,7 +56,7 @@ def get_RG(population_size, b, seed=0):
     
     # Loop until we find a connected graph.
     while True:
-        # generate a random matrix of size b that consists of 0 and 1
+        # generate a a binary random matrix of size b 
         matrix1 = np.array([np.random.randint(2) for _ in range(b)]) 
         
         # retrieve the indices of the upper triangle of a matrix with the size population_size*population_size
@@ -86,6 +79,16 @@ def get_RG(population_size, b, seed=0):
 def fixation_probability(graph, number_of_realization, fitness, population_size):
     """
     Calculate the average fixation probability of a mutant in a graph
+
+    Parameters:
+        - graph: The adjacency matrix representing the population structure.
+        - number_of_realization: number 
+
+    Returns:
+        - fixation_probability: Probability of fixation for a mutant in the given graph.
+
+    Fixation_Time: 
+        - List storing the fixation times for multiple realizations.
     """
     Fixation_Time = []
 
