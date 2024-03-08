@@ -1,6 +1,6 @@
 # Find the network with the highest fixation probability using the genetic algorithm
 
-In this project, we aim to find for a certain population size, how individuals in the population should be connected for the population to have the highest fixation probability.
+In this project, we aim to find out how individuals in a population with a certain size should be connected for the population to have the highest fixation probability.
 We only investigate the undirected symmetric networks. 
 
 ## Brute Force method
